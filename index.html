@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DDM and CAPM Valuation Calculator</title>
+<style>
+  :root { --ink:#1c2530; --muted:#5a6672; --line:#d5dce2; --accent:#2f7f8f; --bg:#f3f6f8; --card:#fff; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:24px 12px; background:var(--bg); color:var(--ink); font-family:"Segoe UI", Arial, sans-serif; line-height:1.5; }
+  .wrap { max-width:760px; margin:0 auto; }
+  h1 { margin:0 0 4px; font-size:26px; }
+  .sub { margin:0 0 18px; color:var(--muted); }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:18px; margin-bottom:16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(200px, 1fr)); gap:12px; }
+  label { display:block; font-size:14px; font-weight:600; }
+  input { width:100%; margin-top:4px; padding:8px 10px; font-size:16px; border:1px solid var(--line); border-radius:6px; }
+  input:focus-visible { outline:2px solid var(--accent); outline-offset:1px; }
+  button { margin-top:14px; padding:10px 18px; font-size:16px; color:#fff; background:var(--accent); border:0; border-radius:6px; cursor:pointer; }
+  button:hover { filter:brightness(.92); }
+  .result { display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:12px; }
+  .stat span { display:block; font-size:13px; color:var(--muted); }
+  .stat strong { font-size:22px; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:99px; font-weight:700; color:#fff; }
+  .buy { background:#2e7d4f; } .hold { background:#8a6d1d; } .sell { background:#b23a3a; }
+  .scroll { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:14px; }
+  th, td { padding:6px 8px; border:1px solid var(--line); text-align:right; }
+  th { background:var(--bg); }
+  .err { color:#b23a3a; font-weight:600; }
+  .note { font-size:13px; color:var(--muted); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>DDM and CAPM Valuation Calculator</h1>
+  <p class="sub">Cost of equity with CAPM, then a Gordon Growth (DDM) share value. Example numbers are filled in, so replace them with your own.</p>
+
+  <div class="card">
+    <div class="grid">
+      <label>Last dividend D0 ($ per share)<input id="d0" type="number" step="any" value="0.50"></label>
+      <label>Dividend growth g (%)<input id="g" type="number" step="any" value="2.5"></label>
+      <label>Risk-free rate (%)<input id="rf" type="number" step="any" value="4.0"></label>
+      <label>Beta<input id="beta" type="number" step="any" value="1.0"></label>
+      <label>Equity risk premium (%)<input id="erp" type="number" step="any" value="6.0"></label>
+      <label>Current share price ($)<input id="price" type="number" step="any" value="8.00"></label>
+    </div>
+    <button id="go">Calculate</button>
+  </div>
+
+  <div class="card" id="out" hidden>
+    <div id="msg" class="err"></div>
+    <div class="result" id="stats"></div>
+    <h2 style="font-size:18px;margin:18px 0 6px">Sensitivity: value per share</h2>
+    <p class="note">Rows are growth g, columns are cost of equity.</p>
+    <div class="scroll"><table id="sens"></table></div>
+  </div>
+
+  <p class="note">Formulas: cost of equity = risk-free rate + beta x equity risk premium. Value = D0 x (1 + g) / (cost of equity - g). Rule used here: more than 10% upside is Buy, less than -10% is Sell, otherwise Hold. This is a learning tool, not investment advice.</p>
+</div>
+<script>
+  const $ = id => document.getElementById(id);
+  const num = id => parseFloat($(id).value);
+  const value = (d0, g, ke) => (ke > g ? d0 * (1 + g) / (ke - g) : null);
+  const pct = x => (x * 100).toFixed(2) + "%";
+  const money = x => "$" + x.toFixed(2);
+
+  function calculate() {
+    const d0 = num("d0"), g = num("g") / 100, rf = num("rf") / 100;
+    const beta = num("beta"), erp = num("erp") / 100, price = num("price");
+    $("out").hidden = false;
+    if ([d0, g, rf, beta, erp, price].some(Number.isNaN)) {
+      $("msg").textContent = "Please fill in every box with a number.";
+      $("stats").innerHTML = ""; $("sens").innerHTML = ""; return;
+    }
+    const ke = rf + beta * erp;
+    const v = value(d0, g, ke);
+    if (v === null) {
+      $("msg").textContent = "Cost of equity must be higher than growth, or the model does not work.";
+      $("stats").innerHTML = ""; $("sens").innerHTML = ""; return;
+    }
+    $("msg").textContent = "";
+    const up = v / price - 1;
+    const rec = up > 0.10 ? "buy" : up < -0.10 ? "sell" : "hold";
+    $("stats").innerHTML =
+      `<div class="stat"><span>Cost of equity</span><strong>${pct(ke)}</strong></div>` +
+      `<div class="stat"><span>Value per share</span><strong>${money(v)}</strong></div>` +
+      `<div class="stat"><span>Upside vs price</span><strong>${pct(up)}</strong></div>` +
+      `<div class="stat"><span>Rule result</span><strong><span class="badge ${rec}">${rec.toUpperCase()}</span></strong></div>`;
+
+    const steps = [-0.01, -0.005, 0, 0.005, 0.01];
+    let html = "<tr><th>g \\ cost of equity</th>" + steps.map(s => `<th>${pct(ke + s)}</th>`).join("") + "</tr>";
+    for (const gs of steps) {
+      html += `<tr><th>${pct(g + gs)}</th>` + steps.map(ks => {
+        const x = value(d0, g + gs, ke + ks);
+        return `<td>${x === null ? "n/a" : money(x)}</td>`;
+      }).join("") + "</tr>";
+    }
+    $("sens").innerHTML = html;
+  }
+  $("go").addEventListener("click", calculate);
+</script>
+</body>
+</html>
